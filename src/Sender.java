@@ -1,3 +1,5 @@
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.*;
 import java.util.*;
@@ -6,11 +8,13 @@ public class Sender implements Runnable {
 
     private String senderIp="127.0.0.1";
     private int senderPort=9876;
-    private String reciverIp;
-    private int reciverPort;
+    private String receiverIp;
+    private int receiverPort;
     private String filename;
     private int MSS;
     private int MWS;
+    //用于接收从待发送文件读取的数据
+    private byte[] outBuffer;
     //用于接收收到的UDP数据包
     private byte[] inBuffer;
     //等待多长时间后重发
@@ -35,16 +39,17 @@ public class Sender implements Runnable {
 
     private DatagramSocket socket;
 
-    public Sender(String reciverIp, int reciverPort, String filename, int MSS) throws SocketException, UnknownHostException {
+    public Sender(String receiverIp, int receiverPort, String filename, int MSS) throws SocketException, UnknownHostException {
         this.filename = "./resource/" + filename;
         this.MSS = MSS;
         this.MWS = 5 * MSS;
-        this.reciverPort = reciverPort;
-        this.reciverIp = reciverIp;
+        this.receiverPort = receiverPort;
+        this.receiverIp = receiverIp;
         this.socket = new DatagramSocket(this.senderPort, InetAddress.getByName(senderIp));
         this.packetCache=new HashMap<>();
         timer=new Timer();
         inBuffer=new byte[9+MSS];
+        this.outBuffer=new byte[MSS];
     }
 
     /**
@@ -73,15 +78,13 @@ public class Sender implements Runnable {
             return;
         }
         System.out.println("socket初始化成功");
-        Thread s=new Thread(sender);
-        s.start();
+        sender.start();
 
     }
 
     public void start() {
         Thread t = new Thread(this);
         t.run();
-
         handshake();
         transport();
         killconnection();
@@ -116,11 +119,30 @@ public class Sender implements Runnable {
          */
         switch (state){
             case 1:
-
+                if (stpPacket.isSYN()){
+                    StpPacket packetInCache=findPacketFromCacheBySeq(stpPacket.getAck()-1);
+                    if (packetInCache!=null&&packetInCache.isSYN()){
+                        this.state=2;
+                        this.packetCache.remove(packetInCache);
+                    }
+                }
                 break;
             case 2:
+                if ((!stpPacket.isSYN())&&(!stpPacket.isFIN())){
+                    StpPacket packetInCache=findPacketFromCacheBySeq(stpPacket.getAck()-1);
+                    if (packetInCache!=null){
+                        this.packetCache.remove(packetInCache);
+                    }
+                }
                 break;
             case 3:
+                if (stpPacket.isFIN()){
+                    StpPacket packetInCache=findPacketFromCacheBySeq(stpPacket.getAck()-1);
+                    if (packetInCache!=null&&packetInCache.isFIN()){
+                        this.state=4;
+                        this.packetCache.remove(packetInCache);
+                    }
+                }
                 break;
         }
     }
@@ -137,15 +159,64 @@ public class Sender implements Runnable {
         try {
             send(true,false,seq,0,null);
             this.state=1;
-            return true;
         }catch (IOException e){
             return false;
         }
+        Date date=new Date();
+        //写个定时，超过时限还没握手就false，先睡了
+        while (state!=2){
+            //一直等待到握手成功
+        }
+        return false;
     }
 
     private boolean transport() {
+        FileInputStream fileInputStream=null;
+        try {
+            fileInputStream=new FileInputStream(filename);
+        }catch (FileNotFoundException e){
+            System.out.println("发送文件名找不到");
+            return false;
+        }
+        boolean isFileFinish=false;
+        while (!isFileFinish){
+            if (packetCache.size()!=0){
+                //如果缓存不为空，即窗口内仍未均收到
+                continue;
+            }
+            for (int i=0;i<MWS/MSS;i++){
+                int bufferLen=-1;
+                try {
+                    bufferLen=fileInputStream.read(outBuffer);
+                }catch (IOException e){
+                    System.out.println("读取待发送文件失败");
+                    return false;
+                }
 
-        return false;
+                if (bufferLen==-1){
+                    isFileFinish=true;
+                    break;
+                }
+                //outBuffer不一定填满，因此作处理，干掉多余部分
+                byte[] data=null;
+                if (bufferLen==outBuffer.length){
+                    data=outBuffer;
+                }else {
+                    data=new byte[bufferLen];
+                    for (int j=0;j<bufferLen;j++){
+                        data[j]=outBuffer[j];
+                    }
+                }
+                try {
+                    this.send(false,false,seq,0,data);
+                }catch (IOException e){
+                    System.out.println("发送数据失败");
+                    return false;
+                }
+
+            }
+        }
+        return true;
     }
 
     /**
@@ -153,7 +224,7 @@ public class Sender implements Runnable {
      */
     private synchronized void send(boolean isSYN,boolean isFIN,int seq,int ack,byte[] data)throws IOException {
         StpPacket stpPacket=new StpPacket(isSYN,isFIN,seq,ack,data);
-        socket.send(new DatagramPacket(stpPacket.toByteArray(),stpPacket.toByteArray().length,InetAddress.getByName(reciverIp),reciverPort));
+        socket.send(new DatagramPacket(stpPacket.toByteArray(),stpPacket.toByteArray().length,InetAddress.getByName(receiverIp),receiverPort));
         if (data==null||data.length==0)this.seq++;
         else this.seq+=data.length;
         packetCache.put(stpPacket,1);
@@ -167,7 +238,7 @@ public class Sender implements Runnable {
             //不知道怎样结束程序……被多线程搞晕了
             throw new IOException();
         }
-        socket.send(new DatagramPacket(stpPacket.toByteArray(),stpPacket.toByteArray().length,InetAddress.getByName(reciverIp),reciverPort));
+        socket.send(new DatagramPacket(stpPacket.toByteArray(),stpPacket.toByteArray().length,InetAddress.getByName(receiverIp),receiverPort));
         packetCache.put(stpPacket,packetCache.get(stpPacket)+1);
         timerResend(stpPacket);
 
@@ -194,6 +265,7 @@ public class Sender implements Runnable {
     }
 
     private boolean killconnection() {
+
         return false;
     }
 
