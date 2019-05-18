@@ -1,6 +1,6 @@
 import java.net.*;
 
-public class Sender implements Runnable{
+public class Sender implements Runnable {
 
     private String ip;
     private String filename;
@@ -35,24 +35,23 @@ public class Sender implements Runnable{
      * @args[1] receiver port
      * @args[2] file to send
      * @args[3] MSS
-     *
-     * */
-    public static void main(String args[]){
+     */
+    public static void main(String args[]) {
         //
-        Sender sender=null;
+        Sender sender = null;
         try {
-            sender=new Sender(args[0],Integer.parseInt(args[1]),args[2],Integer.parseInt(args[3]));
+            sender = new Sender(args[0], Integer.parseInt(args[1]), args[2], Integer.parseInt(args[3]));
 
-        }catch (SocketException e){
+        } catch (SocketException e) {
             System.out.println("socket建立失败");
             return;
-        }catch (UnknownHostException e){
+        } catch (UnknownHostException e) {
             System.out.println("无效的IP地址");
             return;
-        }catch (ArrayIndexOutOfBoundsException e){
+        } catch (ArrayIndexOutOfBoundsException e) {
             System.out.println("参数数量不符合要求");
             return;
-        }catch (NumberFormatException e){
+        } catch (NumberFormatException e) {
             System.out.println("参数格式不符合要求");
             return;
         }
@@ -60,8 +59,9 @@ public class Sender implements Runnable{
 
 
     }
-    public void start(){
-        Thread t=new Thread(this);
+
+    public void start() {
+        Thread t = new Thread(this);
         t.run();
 
         handshake();
@@ -72,16 +72,16 @@ public class Sender implements Runnable{
     /**
      * 接收报文
      */
-    public void run(){
+    public void run() {
 
     }
 
 
-    private boolean handshake(){
+    private boolean handshake() {
         return false;
     }
 
-    private boolean transport(){
+    private boolean transport() {
         /*
          *
          *
@@ -92,11 +92,11 @@ public class Sender implements Runnable{
     /**
      * 报文发送封装
      */
-    private synchronized void send(){
+    private synchronized void send() {
 
     }
 
-    private boolean killconnection(){
+    private boolean killconnection() {
         return false;
     }
 
