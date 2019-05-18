@@ -8,6 +8,7 @@ public class Sender implements Runnable {
     private int MSS;
     private int MWS;
     private int header_length;
+    private byte[] buffer;
 
     /**
      * 记录状态
@@ -28,6 +29,7 @@ public class Sender implements Runnable {
         this.port = port;
         this.ip = ip;
         this.socket = new DatagramSocket(this.port, InetAddress.getByName(ip));
+        this.buffer=new byte[header_length+MSS];
     }
 
     /**
@@ -56,7 +58,8 @@ public class Sender implements Runnable {
             return;
         }
         System.out.println("socket初始化成功");
-
+        Thread s=new Thread(sender);
+        s.start();
 
     }
 
