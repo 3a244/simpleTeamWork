@@ -3,7 +3,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.*;
 
-public class Receiver implements Runnable {
+public class Receiver  {
     private String ip;
     private int port;
     private DatagramPacket packet;
@@ -49,8 +49,7 @@ public class Receiver implements Runnable {
             return;
         }
         System.out.println("socket初始化成功");
-        Thread r=new Thread(receiver);
-        r.start();
+
 
     }
 
