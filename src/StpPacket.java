@@ -55,16 +55,7 @@ public class StpPacket {
         for (int i = 0; i < 9; i++) {
             header[i] = buffer[i];
         }
-        data = null;
-        int len = 9;
-        //由于UDP接收数据的智障机制，InBuffer要大于实际data长度，此处为计算实际长度
-        for (int i = buffer.length - 1; i >= 9; i--) {
-            if (buffer[i] != 0) {
-                len = i + 1;
-                break;
-            }
-        }
-        data = new byte[len - 9];
+        data = new byte[buffer.length - 9];
         for (int i = 0; i < data.length; i++) {
             data[i] = buffer[i + 9];
         }

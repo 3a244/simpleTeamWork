@@ -74,8 +74,12 @@ public class Receiver {
         } catch (IOException e) {
             System.out.println("接收错误");
         }
-
-        handleReceivePacket(new StpPacket(buffer), datagramPacket.getAddress().getHostName(), datagramPacket.getPort());
+        int len=datagramPacket.getLength();
+        byte[] data=new byte[len];
+        for (int i=0;i<len;i++){
+            data[i]=buffer[i];
+        }
+        handleReceivePacket(new StpPacket(data), datagramPacket.getAddress().getHostName(), datagramPacket.getPort());
         return true;
     }
 
