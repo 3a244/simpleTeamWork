@@ -3,7 +3,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.*;
 
-public class Receiver  {
+public class Receiver {
     private String receiverIp;
     private int receiverPort;
     private String senderIp;
@@ -14,7 +14,7 @@ public class Receiver  {
     private String filename;
     private int MSS;
     private int header_length;
-    private int ack=1;
+    private int ack = 1;
 
 
     /**
@@ -22,25 +22,24 @@ public class Receiver  {
      * @args[1] sender port
      * @args[2] file to store
      * @args[3] MSS
-     *
-     * */
+     */
 
-    public static void main(String args[]){
+    public static void main(String args[]) {
         //
-        Receiver receiver=null;
+        Receiver receiver = null;
         try {
-            receiver=new Receiver(args[0],Integer.parseInt(args[1]),args[2],Integer.parseInt(args[3]));
+            receiver = new Receiver(args[0], Integer.parseInt(args[1]), args[2], Integer.parseInt(args[3]));
 
-        }catch (SocketException e){
+        } catch (SocketException e) {
             System.out.println("socket建立失败");
             return;
-        }catch (UnknownHostException e){
+        } catch (UnknownHostException e) {
             System.out.println("无效的IP地址");
             return;
-        }catch (ArrayIndexOutOfBoundsException e){
+        } catch (ArrayIndexOutOfBoundsException e) {
             System.out.println("参数数量不符合要求");
             return;
-        }catch (NumberFormatException e){
+        } catch (NumberFormatException e) {
             System.out.println("参数格式不符合要求");
             return;
         }
@@ -53,43 +52,44 @@ public class Receiver  {
         this.filename = "./resource/" + filename;
         this.MSS = MSS;
         this.senderPort = port;
-        this.senderIp= ip;
-        this.socket = new DatagramSocket(this.senderPort, InetAddress.getByName(this.senderIp));
-        this.Buffer=new byte[header_length+MSS];
+        this.senderIp = ip;
+        this.socket = new DatagramSocket(this.receiverPort, InetAddress.getByName(this.receiverIp));
+        this.Buffer = new byte[header_length + MSS];
     }
 
 
-    public void go(){
-        while(handleReceivePacket(receive())){}
+    public void go() {
+        while (handleReceivePacket(receive())) {
+        }
     }
 
-    private synchronized StpPacket receive(){
-        DatagramPacket datagramPacket=new DatagramPacket(Buffer,Buffer.length);
+    private synchronized StpPacket receive() {
+        DatagramPacket datagramPacket = new DatagramPacket(Buffer, Buffer.length);
         try {
             socket.receive(datagramPacket);
-        }catch (IOException e){
+        } catch (IOException e) {
             System.out.println("接收错误");
         }
         return new StpPacket(Buffer);
     }
 
-    private synchronized boolean handleReceivePacket(StpPacket stpPacket){
-        if (stpPacket.getData()==null||stpPacket.getData().length==0)this.ack++;
-        else this.ack+=stpPacket.getData().length;
+    private synchronized boolean handleReceivePacket(StpPacket stpPacket) {
+        if (stpPacket.getData() == null || stpPacket.getData().length == 0) this.ack++;
+        else this.ack += stpPacket.getData().length;
         //握手，建立同步
-        if (stpPacket.isSYN()){
-            sendAck(true,false,0,ack);
+        if (stpPacket.isSYN()) {
+            sendAck(true, false, 0, ack);
             return true;
         }
         //接收数据，发送响应
-        if ((!stpPacket.isSYN())&&(!stpPacket.isFIN())){
-            sendAck(false,false,0,ack);
+        if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
+            sendAck(false, false, 0, ack);
             writeFile();
             return true;
         }
         //发送结束完成响应
-        if (stpPacket.isFIN()){
-            sendAck(false,true,0,ack);
+        if (stpPacket.isFIN()) {
+            sendAck(false, true, 0, ack);
             return false;
         }
 
@@ -99,23 +99,23 @@ public class Receiver  {
     /**
      * 发送响应
      */
-    private synchronized void sendAck(boolean isSYN,boolean isFIN,int seq,int ack) {
-        StpPacket stpPacket=new StpPacket(isSYN,isFIN,seq,ack,null);
-        try{
-            socket.send(new DatagramPacket(stpPacket.toByteArray(),stpPacket.toByteArray().length,InetAddress.getByName(senderIp),senderPort));
+    private synchronized void sendAck(boolean isSYN, boolean isFIN, int seq, int ack) {
+        StpPacket stpPacket = new StpPacket(isSYN, isFIN, seq, ack, null);
+        try {
+            socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(senderIp), senderPort));
 
-        }catch (IOException e){
+        } catch (IOException e) {
             System.out.println("发送响应失败");
             e.printStackTrace();
         }
 
     }
 
-    private boolean killconnection(){
+    private boolean killconnection() {
         return false;
     }
 
-    private void writeFile(){
+    private void writeFile() {
         try {
             FileOutputStream writer = new FileOutputStream(filename, true);
             writer.write(Buffer);
