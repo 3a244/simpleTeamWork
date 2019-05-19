@@ -24,6 +24,7 @@ public class Sender implements Runnable {
     //已发送但未收到确认的数据包缓存 key为数据包，value为发送次数
     private Map<StpPacket, Integer> packetCache;
     //记录下次发送新报文的seq（每次发送新报文时应更新此变量）
+    //todo:关于seq溢出后归零，待完善
     private int seq = 1;
     private Timer timer;
 
@@ -97,7 +98,7 @@ public class Sender implements Runnable {
             return;
         }
         System.out.println("传输数据成功，开始释放连接");
-        if (!killconnection()){
+        if (!killconnection()) {
             System.out.println("释放连接失败，程序结束");
             this.state = 4;
             return;
@@ -135,7 +136,7 @@ public class Sender implements Runnable {
         switch (state) {
             case 1:
                 if (stpPacket.isSYN()) {
-                    StpPacket packetInCache = findPacketFromCacheBySeq(stpPacket.getAck() - 1);
+                    StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
                     if (packetInCache != null && packetInCache.isSYN()) {
                         this.state = 2;
                         this.packetCache.remove(packetInCache);
@@ -144,7 +145,7 @@ public class Sender implements Runnable {
                 break;
             case 2:
                 if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
-                    StpPacket packetInCache = findPacketFromCacheBySeq(stpPacket.getAck() - 1);
+                    StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
                     if (packetInCache != null) {
                         this.packetCache.remove(packetInCache);
                     }
@@ -152,7 +153,7 @@ public class Sender implements Runnable {
                 break;
             case 3:
                 if (stpPacket.isFIN()) {
-                    StpPacket packetInCache = findPacketFromCacheBySeq(stpPacket.getAck() - 1);
+                    StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
                     if (packetInCache != null && packetInCache.isFIN()) {
                         this.state = 4;
                         this.packetCache.remove(packetInCache);
@@ -162,9 +163,21 @@ public class Sender implements Runnable {
         }
     }
 
-    private StpPacket findPacketFromCacheBySeq(int seq) {
+    /**
+     * 通过报文对应的确认报文的ack在Cache中寻找原报文
+     *
+     * @param ack
+     * @return
+     */
+    private StpPacket findPacketFromCacheByAck(int ack) {
         for (StpPacket stpPacket : packetCache.keySet()) {
-            if (stpPacket.getSeq() == seq) {
+            int seqInNeed;
+            if (stpPacket.getData() == null || stpPacket.getData().length == 0) {
+                seqInNeed = ack - 1;
+            } else {
+                seqInNeed = ack - stpPacket.getData().length;
+            }
+            if (stpPacket.getSeq() == seqInNeed) {
                 return stpPacket;
             }
         }
@@ -174,6 +187,7 @@ public class Sender implements Runnable {
     private boolean establishConnection() {
         return handShake(true);
     }
+
     private boolean killconnection() {
         return handShake(false);
     }
@@ -260,6 +274,12 @@ public class Sender implements Runnable {
             latestTime = new Date();
             latestTime.setTime(latestTime.getTime() + resendDelay * maxResendTimes * MWS / MSS);
         }
+        try {
+            fileInputStream.close();
+        } catch (IOException e) {
+            System.out.println("文件读入流关闭失败");
+        }
+
         return true;
     }
 
