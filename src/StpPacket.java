@@ -1,4 +1,5 @@
 public class StpPacket {
+
     /**
      * header格式说明
      * [0]:包含标志位 第一位为SYN 第二位是FIN 剩余六位暂时闲置
@@ -6,10 +7,12 @@ public class StpPacket {
      * [5]~[8]: 32位的ack
      * 综上，header固定长度为9字节，即此数组长度为9
      */
-    private byte[] header;
+    private byte[] header=new byte[9];
 
     /**
      * data部分长度不一
+     * 最大长度为MSS
+     *
      */
     private byte[] data;
 
@@ -31,8 +34,12 @@ public class StpPacket {
          */
         header = new byte[9];
         byte sign = 0;
-        if (isSYN) sign -= 128;
-        if (isFIN) sign += 64;
+        if (isSYN) {
+            sign |= 0b10000000;
+        }
+        if (isFIN) {
+            sign |= 0b01000000;
+        }
         header[0] = sign;
         byte[] seqBytes = intToByte4(seq);
         byte[] ackBytes = intToByte4(ack);
@@ -51,6 +58,10 @@ public class StpPacket {
      * @param buffer
      */
     public StpPacket(byte[] buffer) {
+        if(buffer==null||buffer.length==0){
+            System.out.println("buffer==null||buffer.length==0");
+        }
+
         header = new byte[9];
         for (int i = 0; i < 9; i++) {
             header[i] = buffer[i];
@@ -62,6 +73,7 @@ public class StpPacket {
 
     }
 
+
     /**
      * 序列化为字节数组 以发送
      *
@@ -70,6 +82,7 @@ public class StpPacket {
     public byte[] toByteArray() {
         byte[] res = null;
         int len = 0;
+
         if (data != null) {
             len = header.length + data.length;
         } else {
@@ -85,17 +98,34 @@ public class StpPacket {
         return res;
     }
 
+    /**
+     *获取data数组
+     *
+     */
     public byte[] getData() {
-        return data;
+        if(data==null){
+            return null;
+        }
+        byte[] res=this.data.clone();
+        return res;
     }
 
+    /**
+     *判断是否同步
+     *
+     */
     public boolean isSYN() {
         return (header[0] & 0b10000000) == 0b10000000;
     }
 
+    /**
+     *判断是否是结束报文
+     *
+     */
     public boolean isFIN() {
         return (header[0] & 0b01000000) == 0b01000000;
     }
+
 
     public int getSeq() {
         String str = "";
