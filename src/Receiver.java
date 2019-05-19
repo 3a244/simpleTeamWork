@@ -54,7 +54,7 @@ public class Receiver {
         this.senderPort = port;
         this.senderIp = ip;
         this.socket = new DatagramSocket(this.receiverPort, InetAddress.getByName(this.receiverIp));
-        this.Buffer = new byte[header_length + MSS];
+        this.Buffer = new byte[header_length + this.MSS];
     }
 
 
@@ -64,9 +64,9 @@ public class Receiver {
     }
 
     private synchronized StpPacket receive() {
-        DatagramPacket datagramPacket = new DatagramPacket(Buffer, Buffer.length);
+        packet = new DatagramPacket(Buffer, Buffer.length);
         try {
-            socket.receive(datagramPacket);
+            socket.receive(packet);
         } catch (IOException e) {
             System.out.println("接收错误");
         }
@@ -78,29 +78,27 @@ public class Receiver {
         else this.ack += stpPacket.getData().length;
         //握手，建立同步
         if (stpPacket.isSYN()) {
-            sendAck(true, false, 0, ack);
-            return true;
+            sendAck(true, false,  ack);
         }
         //接收数据，发送响应
         if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
-            sendAck(false, false, 0, ack);
+            sendAck(false, false, ack);
             writeFile();
-            return true;
         }
         //发送结束完成响应
         if (stpPacket.isFIN()) {
-            sendAck(false, true, 0, ack);
+            sendAck(false, true,  ack);
             return false;
         }
 
-        return false;
+        return true;
     }
 
     /**
      * 发送响应
      */
-    private synchronized void sendAck(boolean isSYN, boolean isFIN, int seq, int ack) {
-        StpPacket stpPacket = new StpPacket(isSYN, isFIN, seq, ack, null);
+    private synchronized void sendAck(boolean isSYN, boolean isFIN, int ack) {
+        StpPacket stpPacket = new StpPacket(isSYN, isFIN, 0, ack, null);
         try {
             socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(senderIp), senderPort));
 
@@ -111,9 +109,6 @@ public class Receiver {
 
     }
 
-    private boolean killconnection() {
-        return false;
-    }
 
     private void writeFile() {
         try {
