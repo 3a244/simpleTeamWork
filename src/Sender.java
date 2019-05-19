@@ -24,6 +24,7 @@ public class Sender implements Runnable {
     //已发送但未收到确认的数据包缓存 key为数据包，value为发送次数
     private Map<StpPacket, Integer> packetCache;
     //记录下次发送新报文的seq（每次发送新报文时应更新此变量）
+    //todo:关于seq溢出后归零，待完善
     private int seq = 1;
     private Timer timer;
 
@@ -35,8 +36,12 @@ public class Sender implements Runnable {
      * 3：fin-wait
      * 4: hasFin-closed
      */
-    private int state = 0;
-
+    private volatile int state = 0;
+    private final int closed = 0;
+    private final int syn_sent = 1;
+    private final int established = 2;
+    private final int fin_wait = 3;
+    private final int hasFin_closed = 4;
     private DatagramSocket socket;
 
     public Sender(String receiverIp, int receiverPort, String filename, int MSS) throws SocketException, UnknownHostException {
@@ -87,19 +92,19 @@ public class Sender implements Runnable {
         t.start();
         if (!establishConnection()) {
             System.out.println("建立连接失败，程序结束");
-            this.state = 4;
+            this.state = hasFin_closed;
             return;
         }
         System.out.println("建立连接成功，开始传输数据");
         if (!transport()) {
             System.out.println("传输数据失败，程序结束");
-            this.state = 4;
+            this.state = hasFin_closed;
             return;
         }
         System.out.println("传输数据成功，开始释放连接");
-        if (!killconnection()){
+        if (!killconnection()) {
             System.out.println("释放连接失败，程序结束");
-            this.state = 4;
+            this.state = hasFin_closed;
             return;
         }
         System.out.println("释放连接成功，程序结束");
@@ -110,7 +115,7 @@ public class Sender implements Runnable {
      */
     @Override
     public void run() {
-        while (state != 4) {
+        while (state != hasFin_closed) {
             DatagramPacket datagramPacket = new DatagramPacket(inBuffer, inBuffer.length);
             try {
                 socket.receive(datagramPacket);
@@ -134,17 +139,21 @@ public class Sender implements Runnable {
          */
         switch (state) {
             case 1:
+
                 if (stpPacket.isSYN()) {
-                    StpPacket packetInCache = findPacketFromCacheBySeq(stpPacket.getAck() - 1);
+
+                    StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
+
                     if (packetInCache != null && packetInCache.isSYN()) {
-                        this.state = 2;
+                        System.out.println("收到握手响应");
+                        this.state = established;
                         this.packetCache.remove(packetInCache);
                     }
                 }
                 break;
             case 2:
                 if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
-                    StpPacket packetInCache = findPacketFromCacheBySeq(stpPacket.getAck() - 1);
+                    StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
                     if (packetInCache != null) {
                         this.packetCache.remove(packetInCache);
                     }
@@ -152,9 +161,9 @@ public class Sender implements Runnable {
                 break;
             case 3:
                 if (stpPacket.isFIN()) {
-                    StpPacket packetInCache = findPacketFromCacheBySeq(stpPacket.getAck() - 1);
+                    StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
                     if (packetInCache != null && packetInCache.isFIN()) {
-                        this.state = 4;
+                        this.state = hasFin_closed;
                         this.packetCache.remove(packetInCache);
                     }
                 }
@@ -162,9 +171,21 @@ public class Sender implements Runnable {
         }
     }
 
-    private StpPacket findPacketFromCacheBySeq(int seq) {
+    /**
+     * 通过报文对应的确认报文的ack在Cache中寻找原报文
+     *
+     * @param ack
+     * @return
+     */
+    private StpPacket findPacketFromCacheByAck(int ack) {
         for (StpPacket stpPacket : packetCache.keySet()) {
-            if (stpPacket.getSeq() == seq) {
+            int seqInNeed;
+            if (stpPacket.getData() == null || stpPacket.getData().length == 0) {
+                seqInNeed = ack - 1;
+            } else {
+                seqInNeed = ack - stpPacket.getData().length;
+            }
+            if (stpPacket.getSeq() == seqInNeed) {
                 return stpPacket;
             }
         }
@@ -174,6 +195,7 @@ public class Sender implements Runnable {
     private boolean establishConnection() {
         return handShake(true);
     }
+
     private boolean killconnection() {
         return handShake(false);
     }
@@ -188,7 +210,7 @@ public class Sender implements Runnable {
     private boolean handShake(boolean isSYN) {
         try {
             send(isSYN, !isSYN, seq, 0, null);
-            this.state = isSYN ? 1 : 3;
+            this.state = isSYN ? syn_sent : fin_wait;
         } catch (IOException e) {
             System.out.println("发送握手报文失败");
             return false;
@@ -196,8 +218,9 @@ public class Sender implements Runnable {
         Date date = new Date();
         date.setTime(date.getTime() + resendDelay * maxResendTimes);
 
-        while (state != (isSYN ? 2 : 4)) {
+        while (state != (isSYN ? established : hasFin_closed)) {
             //一直等待到握手成功
+
             if (new Date().after(date)) {
                 System.out.println("握手超时");
                 return false;
@@ -260,6 +283,12 @@ public class Sender implements Runnable {
             latestTime = new Date();
             latestTime.setTime(latestTime.getTime() + resendDelay * maxResendTimes * MWS / MSS);
         }
+        try {
+            fileInputStream.close();
+        } catch (IOException e) {
+            System.out.println("文件读入流关闭失败");
+        }
+
         return true;
     }
 
