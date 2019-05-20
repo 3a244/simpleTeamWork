@@ -52,7 +52,7 @@ public class Sender implements Runnable {
         this.receiverIp = receiverIp;
         this.socket = new DatagramSocket(this.senderPort, InetAddress.getByName(senderIp));
         this.packetCache = new HashMap<>();
-        timer = new Timer();
+        timer = new Timer(true);
         inBuffer = new byte[9 + MSS];
         this.outBuffer = new byte[MSS];
     }
@@ -108,6 +108,7 @@ public class Sender implements Runnable {
             return;
         }
         System.out.println("释放连接成功，程序结束");
+        //System.exit(0);
     }
 
     /**
@@ -295,7 +296,8 @@ public class Sender implements Runnable {
      */
     private synchronized void send(boolean isSYN, boolean isFIN, int seq, int ack, byte[] data) throws IOException {
         StpPacket stpPacket = new StpPacket(isSYN, isFIN, seq, ack, data);
-        socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
+        //if(isSYN||isFIN)
+            socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
         if (data == null || data.length == 0) this.seq++;
         else this.seq += data.length;
         packetCache.put(stpPacket, 1);
@@ -306,13 +308,13 @@ public class Sender implements Runnable {
      * 报文发送封装（重发已发送过的数据报）
      */
     private synchronized void send(StpPacket stpPacket) throws IOException {
-        if (packetCache.get(stpPacket) == maxResendTimes) {
+        /*if (packetCache.get(stpPacket) == maxResendTimes) {
             //不知道怎样结束程序……被多线程搞晕了
             throw new IOException();
-        }
+        }*/
         socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
         packetCache.put(stpPacket, packetCache.get(stpPacket) + 1);
-        timerResend(stpPacket);
+        //timerResend(stpPacket);
 
     }
 
@@ -326,13 +328,16 @@ public class Sender implements Runnable {
             @Override
             public synchronized void run() {
                 //如果缓存区还有此数据包，即还未收到确认，才会重发
-                if (packetCache.containsKey(stpPacket)) {
+                if (packetCache.containsKey(stpPacket)&&packetCache.get(stpPacket) != maxResendTimes) {
                     try {
                         send(stpPacket);
                     } catch (IOException e) {
 
                     }
                 }
+                else
+                    //删除该重传任务
+                    this.cancel();
             }
         }, resendDelay);
     }
