@@ -107,6 +107,13 @@ public class Sender implements Runnable {
             this.state = hasFin_closed;
             return;
         }
+		
+		try {
+            sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+		
         System.out.println("释放连接成功，程序结束");
     }
 
@@ -138,7 +145,7 @@ public class Sender implements Runnable {
          * 4: hasFin-closed
          */
         switch (state) {
-            case 1:
+            case syn_sent:
 
                 if (stpPacket.isSYN()) {
                     StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
@@ -149,7 +156,7 @@ public class Sender implements Runnable {
                     }
                 }
                 break;
-            case 2:
+            case established:
                 if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
                     StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
                     if (packetInCache != null) {
@@ -157,7 +164,7 @@ public class Sender implements Runnable {
                     }
                 }
                 break;
-            case 3:
+            case fin_wait:
                 if (stpPacket.isFIN()) {
                     StpPacket packetInCache = findPacketFromCacheByAck(stpPacket.getAck());
                     if (packetInCache != null && packetInCache.isFIN()) {
