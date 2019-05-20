@@ -30,6 +30,11 @@ public class Sender implements Runnable {
     private int seq = 1;
     private volatile Timer timer;
 
+    //是否开启PLD模式
+    private boolean PLDModuleOn=false;
+    //丢包率
+    private double PDrop=-1.0;
+
     /**
      * 记录状态
      * 0： closed
@@ -285,13 +290,24 @@ public class Sender implements Runnable {
                         data[j] = outBuffer[j];
                     }
                 }
-                try {
-                    this.send(false, false, seq, 0, data);
-                } catch (IOException e) {
-                    System.out.println("发送数据失败");
-                    return false;
+                if(PLDModuleOn==true) {
+                    double random=Math.random();
+                    if(random>PDrop) {
+                        try {
+                            this.send(false, false, seq, 0, data);
+                        } catch (IOException e) {
+                            System.out.println("发送数据失败");
+                            return false;
+                        }
+                    }
+                }else {
+                    try {
+                        this.send(false, false, seq, 0, data);
+                    } catch (IOException e) {
+                        System.out.println("发送数据失败");
+                        return false;
+                    }
                 }
-
             }
             latestTime = System.currentTimeMillis() + resendDelay * maxResendTimes * MWS / MSS;
         }
