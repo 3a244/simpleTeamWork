@@ -16,19 +16,19 @@ public class Sender implements Runnable {
     private int MSS;
     private int MWS;
     //用于接收从待发送文件读取的数据
-    private byte[] outBuffer;
+    private volatile byte[]  outBuffer;
     //用于接收收到的UDP数据包
-    private byte[] inBuffer;
+    private volatile byte[] inBuffer;
     //等待多长时间后重发
     private final long resendDelay = 1000;
     //重发次数上限
     private final int maxResendTimes = 3;
     //已发送但未收到确认的数据包缓存 key为数据包，value为发送次数
-    private Map<StpPacket, Integer> packetCache;
+    private volatile Map<StpPacket, Integer> packetCache;
     //记录下次发送新报文的seq（每次发送新报文时应更新此变量）
     //todo:关于seq溢出后归零，待完善
     private int seq = 1;
-    private Timer timer;
+    private volatile Timer timer;
 
     /**
      * 记录状态
@@ -44,12 +44,12 @@ public class Sender implements Runnable {
     private final int established = 2;
     private final int fin_wait = 3;
     private final int hasFin_closed = 4;
-    private DatagramSocket socket;
+    private volatile DatagramSocket socket;
 
     public Sender(String receiverIp, int receiverPort, String filename, int MSS) throws SocketException, UnknownHostException {
         this.filename = "./resource/" + filename;
         this.MSS = MSS;
-        this.MWS = 5 * MSS;
+        this.MWS = 50 * MSS;
         this.receiverPort = receiverPort;
         this.receiverIp = receiverIp;
         this.socket = new DatagramSocket(this.senderPort, InetAddress.getByName(senderIp));
@@ -108,6 +108,11 @@ public class Sender implements Runnable {
             System.out.println("释放连接失败，程序结束");
             this.state = hasFin_closed;
             return;
+        }
+        try {
+            sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
         System.out.println("释放连接成功，程序结束");
     }
@@ -221,13 +226,13 @@ public class Sender implements Runnable {
             System.out.println("发送握手报文失败");
             return false;
         }
-        Date date = new Date();
-        date.setTime(date.getTime() + resendDelay * maxResendTimes);
 
+        long startTime =  System.currentTimeMillis();
+        long endTime =  startTime+ resendDelay * maxResendTimes;
         while (state != (isSYN ? established : hasFin_closed)) {
             //一直等待到握手成功
 
-            if (new Date().after(date)) {
+            if (System.currentTimeMillis()>endTime) {
                 System.out.println("握手超时");
                 return false;
             }
@@ -245,9 +250,11 @@ public class Sender implements Runnable {
         }
         boolean isFileFinish = false;
         //若超过这个时间，窗口内报文仍未全部收到确认，则退出
-        Date latestTime = null;
+
+        long latestTime = System.currentTimeMillis()+ resendDelay * maxResendTimes * MWS / MSS;
+
         while (!(isFileFinish && packetCache.size() == 0)) {
-            if (packetCache.size() != 0 && new Date().after(latestTime)) {
+            if (packetCache.size() != 0 && System.currentTimeMillis()>latestTime) {
                 System.out.println("等待确认报文超时");
                 return false;
             }
@@ -286,8 +293,7 @@ public class Sender implements Runnable {
                 }
 
             }
-            latestTime = new Date();
-            latestTime.setTime(latestTime.getTime() + resendDelay * maxResendTimes * MWS / MSS);
+            latestTime = System.currentTimeMillis() + resendDelay * maxResendTimes * MWS / MSS;
         }
         try {
             fileInputStream.close();
@@ -314,10 +320,7 @@ public class Sender implements Runnable {
      * 报文发送封装（重发已发送过的数据报）
      */
     private synchronized void send(StpPacket stpPacket) throws IOException {
-        if (packetCache.get(stpPacket) == maxResendTimes) {
-            //不知道怎样结束程序……被多线程搞晕了
-            throw new IOException();
-        }
+
         socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
         packetCache.put(stpPacket, packetCache.get(stpPacket) + 1);
         timerResend(stpPacket);
@@ -333,10 +336,13 @@ public class Sender implements Runnable {
         timer.schedule(new TimerTask() {
             @Override
             public synchronized void run() {
+
                 //如果缓存区还有此数据包，即还未收到确认，才会重发
-                if (packetCache.containsKey(stpPacket)) {
+                if (packetCache.containsKey(stpPacket)&&packetCache.get(stpPacket)!=maxResendTimes) {
+                    System.out.println("hehe");
                     try {
                         send(stpPacket);
+
                     } catch (IOException e) {
 
                     }
