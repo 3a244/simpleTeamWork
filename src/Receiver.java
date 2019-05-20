@@ -23,6 +23,9 @@ public class Receiver {
      * 2: hasFin-closed
      */
     private int state;
+    private final int closed = 0;
+    private final int established = 1;
+    private final int hasFin_closed = 2;
 
     public Receiver(int receiverPort, String filename, int MSS) throws SocketException, UnknownHostException {
         this.filename = "./resource/" + filename;
@@ -62,7 +65,7 @@ public class Receiver {
 
     public void go() {
         System.out.println("开始监听接收报文");
-        while (state != 2) {
+        while (state != hasFin_closed) {
             receive();
         }
     }
@@ -85,7 +88,7 @@ public class Receiver {
 
     private boolean handleReceivePacket(StpPacket stpPacket, String hostName, int port) {
         switch (this.state) {
-            case 0:
+            case closed:
                 //握手，建立同步
                 if (stpPacket.isSYN() && (stpPacket.getData() == null || stpPacket.getData().length == 0)) {
                     //根据握手报文确定发送方的地址与端口
@@ -94,11 +97,11 @@ public class Receiver {
                     //初始ack应该由sender发送的seq决定
                     this.ack = stpPacket.getSeq() + 1;
                     sendAck(true, false, 0, this.ack);
-                    this.state = 1;
+                    this.state = established;
                     System.out.println("握手成功，建立连接");
                 }
                 break;
-            case 1:
+            case established:
                 //接收数据，发送响应
                 if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
                     if (stpPacket.getSeq() == ack) {
@@ -123,7 +126,7 @@ public class Receiver {
                     this.ack++;
                     //发送结束完成响应
                     sendAck(false, true, 0, ack);
-                    this.state=2;
+                    this.state=hasFin_closed;
                 }
                 break;
         }

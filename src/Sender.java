@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.net.*;
 import java.util.*;
 
+import static java.lang.Thread.sleep;
+
 public class Sender implements Runnable {
 
     private String senderIp = "127.0.0.1";
@@ -52,7 +54,7 @@ public class Sender implements Runnable {
         this.receiverIp = receiverIp;
         this.socket = new DatagramSocket(this.senderPort, InetAddress.getByName(senderIp));
         this.packetCache = new HashMap<>();
-        timer = new Timer();
+        timer = new Timer(true);
         inBuffer = new byte[9 + MSS];
         this.outBuffer = new byte[MSS];
     }
@@ -107,13 +109,6 @@ public class Sender implements Runnable {
             this.state = hasFin_closed;
             return;
         }
-		
-		try {
-            sleep(100);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-		
         System.out.println("释放连接成功，程序结束");
     }
 
@@ -132,6 +127,12 @@ public class Sender implements Runnable {
             StpPacket stpPacket = new StpPacket(inBuffer);
             handleReceivePacket(stpPacket);
         }
+        try {
+            sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
         System.out.println("结束接收监听");
     }
 
