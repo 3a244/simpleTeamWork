@@ -106,12 +106,14 @@ public class Receiver {
                 if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
                     if (stpPacket.getSeq() == ack) {
                         //如果收到的数据报文是期望顺序中的下一个
-                        System.out.println("按顺序收到一个报文");
+                        System.out.println("收到一个报文"+stpPacket.getSeq());
+
                         this.ack += stpPacket.getData().length;
                         sendAck(false, false, 0, ack);
                         writeFile(stpPacket.getData());
                         //检查期望的下一个数据报是否已在缓存中，若在则写入文件
                         while (disorderPacketCache.get(ack) != null) {
+                            System.out.println("从缓存中写入文件："+ack);
                             StpPacket packetInCache = disorderPacketCache.get(ack);
                             writeFile(packetInCache.getData());
                             this.ack += packetInCache.getData().length;
@@ -122,7 +124,8 @@ public class Receiver {
                         sendAck(false, false, 0, stpPacket.getSeq()+stpPacket.getData().length);
                         disorderPacketCache.put(stpPacket.getSeq(),stpPacket);
                     }
-                } else if (stpPacket.isFIN()&&stpPacket.getSeq()==ack) {
+                } else if (stpPacket.isFIN()&&stpPacket.getSeq()>=ack) {
+                    //ycf：将seq==ack改成了seq>ack
                     this.ack++;
                     //发送结束完成响应
                     sendAck(false, true, 0, ack);

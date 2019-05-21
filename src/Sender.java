@@ -30,10 +30,8 @@ public class Sender implements Runnable {
     private int seq = 1;
     private volatile Timer timer;
 
-    //是否开启PLD模式
-    private boolean PLDModuleOn=false;
     //丢包率
-    private double PDrop=-1.0;
+    private double PDrop=0.9;
 
     /**
      * 记录状态
@@ -51,11 +49,12 @@ public class Sender implements Runnable {
     private final int hasFin_closed = 4;
     private volatile DatagramSocket socket;
 
-    public Sender(String receiverIp, int receiverPort, String filename, int MSS) throws SocketException, UnknownHostException {
+    public Sender(String receiverIp, int receiverPort, String filename, int MSS,double PDrop) throws SocketException, UnknownHostException {
         this.filename = "./resource/" + filename;
         this.MSS = MSS;
         this.MWS = 50 * MSS;
         this.receiverPort = receiverPort;
+        this.PDrop=PDrop;
         this.receiverIp = receiverIp;
         this.socket = new DatagramSocket(this.senderPort, InetAddress.getByName(senderIp));
         this.packetCache = new HashMap<>();
@@ -69,13 +68,13 @@ public class Sender implements Runnable {
      * @args[1] receiver port
      * @args[2] file to send
      * @args[3] MSS
+     * @args[4] PDrop
      */
     public static void main(String args[]) {
         //
         Sender sender = null;
         try {
-            sender = new Sender(args[0], Integer.parseInt(args[1]), args[2], Integer.parseInt(args[3]));
-
+            sender = new Sender(args[0], Integer.parseInt(args[1]), args[2], Integer.parseInt(args[3]),Double.parseDouble(args[4]));
         } catch (SocketException e) {
             System.out.println("socket建立失败");
             return;
@@ -259,6 +258,9 @@ public class Sender implements Runnable {
         long latestTime = System.currentTimeMillis()+ resendDelay * maxResendTimes * MWS / MSS;
 
         while (!(isFileFinish && packetCache.size() == 0)) {
+            if(state!=2){
+                return false;
+            }
             if (packetCache.size() != 0 && System.currentTimeMillis()>latestTime) {
                 System.out.println("等待确认报文超时");
                 return false;
@@ -290,27 +292,18 @@ public class Sender implements Runnable {
                         data[j] = outBuffer[j];
                     }
                 }
-                if(PLDModuleOn==true) {
-                    double random=Math.random();
-                    if(random>PDrop) {
+
                         try {
                             this.send(false, false, seq, 0, data);
                         } catch (IOException e) {
                             System.out.println("发送数据失败");
                             return false;
                         }
-                    }
-                }else {
-                    try {
-                        this.send(false, false, seq, 0, data);
-                    } catch (IOException e) {
-                        System.out.println("发送数据失败");
-                        return false;
-                    }
+
                 }
             }
             latestTime = System.currentTimeMillis() + resendDelay * maxResendTimes * MWS / MSS;
-        }
+
         try {
             fileInputStream.close();
         } catch (IOException e) {
@@ -325,7 +318,18 @@ public class Sender implements Runnable {
      */
     private synchronized void send(boolean isSYN, boolean isFIN, int seq, int ack, byte[] data) throws IOException {
         StpPacket stpPacket = new StpPacket(isSYN, isFIN, seq, ack, data);
-        socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
+
+            double random = Math.random();
+//            System.out.println("random为："+random);
+            if (random > PDrop||data==null) {
+                System.out.println("成功发送序号："+stpPacket.getSeq());
+
+                socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
+            }
+            else {
+                System.out.println("丢包序号："+stpPacket.getSeq());
+           }
+
         if (data == null || data.length == 0) this.seq++;
         else this.seq += data.length;
         packetCache.put(stpPacket, 1);
@@ -336,8 +340,16 @@ public class Sender implements Runnable {
      * 报文发送封装（重发已发送过的数据报）
      */
     private synchronized void send(StpPacket stpPacket) throws IOException {
+        double random = Math.random();
+   //     System.out.println("重传random为："+random);
+        if (random > PDrop||stpPacket.getData()==(null)) {
+            System.out.println("成功重传序号："+stpPacket.getSeq());
 
-        socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
+            socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
+        }
+        else {
+           System.out.println("重传丢包序号："+stpPacket.getSeq());
+        }
         packetCache.put(stpPacket, packetCache.get(stpPacket) + 1);
         timerResend(stpPacket);
 
@@ -354,14 +366,27 @@ public class Sender implements Runnable {
             public synchronized void run() {
 
                 //如果缓存区还有此数据包，即还未收到确认，才会重发
-                if (packetCache.containsKey(stpPacket)&&packetCache.get(stpPacket)!=maxResendTimes) {
-                    System.out.println("hehe");
+                if (packetCache.containsKey(stpPacket)&&packetCache.get(stpPacket)!=maxResendTimes&& state != fin_wait) {
                     try {
+
                         send(stpPacket);
 
                     } catch (IOException e) {
 
                     }
+                }else if(packetCache.containsKey(stpPacket)&&packetCache.get(stpPacket)==maxResendTimes&&state != fin_wait){
+
+                    packetCache.remove(stpPacket);
+                    try {
+                        System.out.println("重发失败，停止传输"+stpPacket.getSeq());
+                        send(false, true, stpPacket.getSeq(), 0, null);
+                        state = fin_wait;
+                        timer.cancel();
+                    }catch (IOException e){
+                        System.out.println("发送握手报文失败");
+
+                    }
+
                 }
             }
         }, resendDelay);
