@@ -56,6 +56,8 @@ public class Sender implements Runnable {
         this.receiverPort = receiverPort;
         this.PDrop=PDrop;
         this.receiverIp = receiverIp;
+        this.senderIp=getLocalIpv4Address();
+        System.out.println(senderIp);
         this.socket = new DatagramSocket(this.senderPort, InetAddress.getByName(senderIp));
         this.packetCache = new HashMap<>();
         timer = new Timer(true);
@@ -293,16 +295,16 @@ public class Sender implements Runnable {
                     }
                 }
 
-                        try {
-                            this.send(false, false, seq, 0, data);
-                        } catch (IOException e) {
-                            System.out.println("发送数据失败");
-                            return false;
-                        }
-
+                try {
+                    this.send(false, false, seq, 0, data);
+                } catch (IOException e) {
+                    System.out.println("发送数据失败");
+                    return false;
                 }
+
             }
-            latestTime = System.currentTimeMillis() + resendDelay * maxResendTimes * MWS / MSS;
+        }
+        latestTime = System.currentTimeMillis() + resendDelay * maxResendTimes * MWS / MSS;
 
         try {
             fileInputStream.close();
@@ -319,15 +321,15 @@ public class Sender implements Runnable {
     private synchronized void send(boolean isSYN, boolean isFIN, int seq, int ack, byte[] data) throws IOException {
         StpPacket stpPacket = new StpPacket(isSYN, isFIN, seq, ack, data);
 
-            double random = Math.random();
+        double random = Math.random();
 //            System.out.println("random为："+random);
-            if (random > PDrop||data==null) {
-                System.out.println("成功发送序号："+stpPacket.getSeq());
-                socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
-            }
-            else {
-                System.out.println("丢包序号："+stpPacket.getSeq());
-           }
+        if (random > PDrop||data==null) {
+            System.out.println("成功发送序号："+stpPacket.getSeq());
+            socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
+        }
+        else {
+            System.out.println("丢包序号："+stpPacket.getSeq());
+        }
 
         if (data == null || data.length == 0) this.seq++;
         else this.seq += data.length;
@@ -340,14 +342,14 @@ public class Sender implements Runnable {
      */
     private synchronized void send(StpPacket stpPacket) throws IOException {
         double random = Math.random();
-   //     System.out.println("重传random为："+random);
+        //     System.out.println("重传random为："+random);
         if (random > PDrop||stpPacket.getData()==(null)) {
             System.out.println("成功重传序号："+stpPacket.getSeq());
 
             socket.send(new DatagramPacket(stpPacket.toByteArray(), stpPacket.toByteArray().length, InetAddress.getByName(receiverIp), receiverPort));
         }
         else {
-           System.out.println("重传丢包序号："+stpPacket.getSeq());
+            System.out.println("重传丢包序号："+stpPacket.getSeq());
         }
         packetCache.put(stpPacket, packetCache.get(stpPacket) + 1);
         timerResend(stpPacket);
@@ -391,4 +393,39 @@ public class Sender implements Runnable {
         }, resendDelay);
     }
 
+    public static String getLocalIpv4Address() throws SocketException {
+        String localip = null;// 本地IP，如果没有配置外网IP则返回它
+        String netip = null;// 外网IP
+        Enumeration<NetworkInterface> netInterfaces = null;
+        try {
+            netInterfaces = NetworkInterface.getNetworkInterfaces();
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+        InetAddress ip = null;
+        boolean finded = false;// 是否找到外网IP
+        while (netInterfaces.hasMoreElements() && !finded) {
+            NetworkInterface ni = netInterfaces.nextElement();
+            Enumeration<InetAddress> address = ni.getInetAddresses();
+            while (address.hasMoreElements()) {
+                ip = address.nextElement();
+                if (!ip.isSiteLocalAddress()
+                        && !ip.isLoopbackAddress()
+                        && ip.getHostAddress().indexOf(":") == -1) {// 外网IP
+                    netip = ip.getHostAddress();
+                    finded = true;
+                    break;
+                } else if (ip.isSiteLocalAddress()
+                        && !ip.isLoopbackAddress()
+                        && ip.getHostAddress().indexOf(":") == -1) {// 内网IP
+                    localip = ip.getHostAddress();
+                }
+            }
+        }
+        if (netip != null && !"".equals(netip)) {
+            return netip;
+        } else {
+            return localip;
+        }
+    }
 }

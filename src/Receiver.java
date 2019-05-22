@@ -2,7 +2,7 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.net.*;
-import java.util.HashMap;
+import java.util.*;
 
 public class Receiver {
     private String receiverIp = "127.0.0.1";
@@ -30,6 +30,7 @@ public class Receiver {
     public Receiver(int receiverPort, String filename, int MSS) throws SocketException, UnknownHostException {
         this.filename = "./resource/" + filename;
         this.MSS = MSS;
+        this.receiverIp = getLocalIpv4Address();
         this.receiverPort = receiverPort;
         this.socket = new DatagramSocket(this.receiverPort, InetAddress.getByName(this.receiverIp));
         this.buffer = new byte[9 + MSS];
@@ -77,10 +78,10 @@ public class Receiver {
         } catch (IOException e) {
             System.out.println("接收错误");
         }
-        int len=datagramPacket.getLength();
-        byte[] data=new byte[len];
-        for (int i=0;i<len;i++){
-            data[i]=buffer[i];
+        int len = datagramPacket.getLength();
+        byte[] data = new byte[len];
+        for (int i = 0; i < len; i++) {
+            data[i] = buffer[i];
         }
 
         handleReceivePacket(new StpPacket(data), datagramPacket.getAddress().getHostAddress(), datagramPacket.getPort());
@@ -107,30 +108,30 @@ public class Receiver {
                 if ((!stpPacket.isSYN()) && (!stpPacket.isFIN())) {
                     if (stpPacket.getSeq() == ack) {
                         //如果收到的数据报文是期望顺序中的下一个
-                        System.out.println("收到一个报文"+stpPacket.getSeq());
+                        System.out.println("收到一个报文" + stpPacket.getSeq());
 
                         this.ack += stpPacket.getData().length;
                         sendAck(false, false, 0, ack);
                         writeFile(stpPacket.getData());
                         //检查期望的下一个数据报是否已在缓存中，若在则写入文件
                         while (disorderPacketCache.get(ack) != null) {
-                            System.out.println("从缓存中写入文件："+ack);
+                            System.out.println("从缓存中写入文件：" + ack);
                             StpPacket packetInCache = disorderPacketCache.get(ack);
                             writeFile(packetInCache.getData());
                             this.ack += packetInCache.getData().length;
                             disorderPacketCache.remove(packetInCache.getSeq());
                         }
-                    }else {
+                    } else {
                         //如果收到的数据报不是期望顺序的下一个，则缓存,不改变this.ack
-                        sendAck(false, false, 0, stpPacket.getSeq()+stpPacket.getData().length);
-                        disorderPacketCache.put(stpPacket.getSeq(),stpPacket);
+                        sendAck(false, false, 0, stpPacket.getSeq() + stpPacket.getData().length);
+                        disorderPacketCache.put(stpPacket.getSeq(), stpPacket);
                     }
-                } else if (stpPacket.isFIN()&&stpPacket.getSeq()>=ack) {
+                } else if (stpPacket.isFIN() && stpPacket.getSeq() >= ack) {
                     //ycf：将seq==ack改成了seq>ack
                     this.ack++;
                     //发送结束完成响应
                     sendAck(false, true, 0, ack);
-                    this.state=hasFin_closed;
+                    this.state = hasFin_closed;
                 }
                 break;
         }
@@ -160,5 +161,43 @@ public class Receiver {
             e.printStackTrace();
         }
     }
+
+    public static String getLocalIpv4Address() {
+        String localip = null;// 本地IP，如果没有配置外网IP则返回它
+        String netip = null;// 外网IP
+        Enumeration<NetworkInterface> netInterfaces = null;
+        try {
+            netInterfaces = NetworkInterface.getNetworkInterfaces();
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+        InetAddress ip = null;
+        boolean finded = false;// 是否找到外网IP
+        while (netInterfaces.hasMoreElements() && !finded) {
+            NetworkInterface ni = netInterfaces.nextElement();
+            Enumeration<InetAddress> address = ni.getInetAddresses();
+            while (address.hasMoreElements()) {
+                ip = address.nextElement();
+                if (!ip.isSiteLocalAddress()
+                        && !ip.isLoopbackAddress()
+                        && ip.getHostAddress().indexOf(":") == -1) {// 外网IP
+                    netip = ip.getHostAddress();
+                    finded = true;
+                    break;
+                } else if (ip.isSiteLocalAddress()
+                        && !ip.isLoopbackAddress()
+                        && ip.getHostAddress().indexOf(":") == -1) {// 内网IP
+                    localip = ip.getHostAddress();
+                }
+            }
+        }
+        if (netip != null && !"".equals(netip)) {
+            return netip;
+        } else {
+            return localip;
+        }
+
+    }
+
 }
 
